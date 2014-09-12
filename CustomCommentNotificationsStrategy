@@ -1,0 +1,116 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+using Telerik.Sitefinity.Security;
+using Telerik.Sitefinity.Security.Claims;
+using Telerik.Sitefinity.Security.Model;
+using Telerik.Sitefinity.Services;
+using Telerik.Sitefinity.Services.Comments;
+using Telerik.Sitefinity.Services.Comments.Impl.Notifications;
+using Telerik.Sitefinity.Services.Comments.Notifications;
+using Telerik.Sitefinity.Services.Notifications;
+namespace SitefinityWebApp
+{
+    public class CustomCommentNotificationsStrategy : CommentNotificationsStrategy 
+    {
+        /// <summary>
+        /// Checks whether subscribers should be notified for the given comment event.
+        /// </summary>
+        /// <param name="@event">The event.</param>
+        protected override bool ShouldNotify(ICommentEvent @event)
+        {
+            var isExpectedEvent = @event != null && (@event is ICommentCreatedEvent || @event is ICommentUpdatedEvent);
+            return isExpectedEvent && @event.Item != null;
+        }
+
+
+        public class CustomSubscriptionData : SubscriptionData
+        {
+            public string CommentStatus { get; set; }
+        }
+
+        // <summary>
+        /// Gets the subscription list resolve key.
+        /// </summary>
+        /// <param name="subscriptionData">The subscription data.</param>
+        /// <exception cref="System.InvalidOperationException">Insufficient subscription data. Please provide ThreadKey or ThreadType.</exception>
+        protected override string GetSubscriptionListResolveKey(SubscriptionData subscriptionData)
+        {
+
+            if (subscriptionData is CustomSubscriptionData)
+            {
+                var customSubscrData = (CustomSubscriptionData)subscriptionData;
+                if (customSubscrData.CommentStatus.IsNullOrWhitespace())
+                {
+                    return base.GetSubscriptionListResolveKey(subscriptionData);
+                }
+                else
+                {
+                    return this.GetTypeAndStatusResolveKey(customSubscrData.ThreadType, customSubscrData.CommentStatus);
+                }
+            }
+            else
+            {
+                return base.GetSubscriptionListResolveKey(subscriptionData);
+            }
+        }
+
+        private string GetTypeAndStatusResolveKey(string type, string status)
+        {
+            return string.Format("{0}|{1}|ByThreadTypeAndCommentStatus", type, status);
+        }
+
+        /// <summary>
+        /// Gets the subscription list keys that should be notified for the specified event.
+        /// </summary>
+        /// <param name="event">The event.</param>
+        protected override IEnumerable<string> GetSubscriptionListKeys(ICommentEvent @event)
+        {
+           
+            if ( @event.Item.Status == StatusConstants.WaitingForApproval)
+            {
+                return new List<string>();
+            }
+            else
+            {
+                return base.GetSubscriptionListKeys(@event);
+            }
+           
+        }
+
+        protected override IEnumerable<ISubscriberRequest> GetDynamicSubscribers(ICommentEvent @event)
+        {
+            if (@event.Item.Status == StatusConstants.WaitingForApproval)
+            {
+                var Admins = new List<ISubscriberRequest>();
+                List<User> users = new List<User>();
+                RoleManager roleMan = RoleManager.GetManager(SecurityManager.ApplicationRolesProviderName);
+                users = roleMan.GetUsersInRole("Administrators").ToList();
+
+           
+                foreach (var item in users)
+                {
+                    var subscriberRequest = new SubscriberRequestProxy();
+                    subscriberRequest.Email = item.Email;
+                    subscriberRequest.FirstName = item.FirstName;
+                    subscriberRequest.LastName = item.LastName;
+                    subscriberRequest.ResolveKey = item.Id.ToString();
+                    subscriberRequest.Disabled = false;
+
+                    Admins.Add(subscriberRequest);
+
+                }
+                return Admins; 
+            }
+            else
+            {
+                return null;
+            }
+           
+        }
+
+
+
+    }
+}
